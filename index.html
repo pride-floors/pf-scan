@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#1a1510">
+  <title>Sample Pricing — Pride Floors</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #241C14; --paper: #FAFAF7; --board: #EFEAE2;
+      --stain: #8C5A28; --meta: #6B6257; --line: #D9D2C7; --ok: #3E6B3A;
+    }
+    * { box-sizing: border-box; margin: 0; }
+    body {
+      background: var(--board); color: var(--ink);
+      font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 20px 16px 48px; display: flex; justify-content: center;
+    }
+    .wrap { width: 100%; max-width: 430px; }
+    .masthead { text-align: center; margin-bottom: 18px; }
+    .masthead img { max-height: 44px; margin-bottom: 6px; }
+    .masthead .biz {
+      font-family: Archivo, sans-serif; font-weight: 700; font-size: 14px;
+      letter-spacing: .14em; text-transform: uppercase;
+    }
+    .masthead .sub { font-size: 12px; color: var(--meta); letter-spacing: .06em; }
+    .card {
+      background: var(--paper); border: 1px solid var(--line); border-radius: 14px;
+      padding: 22px 20px; box-shadow: 0 10px 24px rgba(36,28,20,.08);
+    }
+    .tag {
+      position: relative; border: 2px solid var(--ink); border-radius: 10px;
+      padding: 18px 18px 14px 34px; margin: 18px 0 6px; background: #FFFFFF;
+      animation: settle .35s ease-out;
+    }
+    .tag::before {
+      content: ""; position: absolute; left: 12px; top: 50%;
+      width: 12px; height: 12px; margin-top: -6px;
+      border: 2px solid var(--ink); border-radius: 50%; background: var(--paper);
+    }
+    @keyframes settle { from { opacity: 0; transform: translateY(6px) rotate(-.6deg); } }
+    @media (prefers-reduced-motion: reduce) { .tag { animation: none; } }
+    .eyebrow {
+      font-family: Archivo, sans-serif; font-weight: 700; font-size: 12px;
+      letter-spacing: .16em; text-transform: uppercase; color: var(--stain);
+    }
+    h1.collection {
+      font-family: Archivo, sans-serif; font-weight: 800; font-size: 26px;
+      line-height: 1.15; text-transform: uppercase; margin: 2px 0 4px;
+    }
+    .chip {
+      display: inline-block; font-size: 12px; color: var(--meta);
+      border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px;
+    }
+    .starting { font-size: 13px; color: var(--meta); }
+    .price {
+      font-family: Archivo, sans-serif; font-weight: 800; font-size: 44px;
+      line-height: 1; letter-spacing: -.01em;
+    }
+    .price .unit { font-size: 15px; font-weight: 700; color: var(--meta); letter-spacing: 0; }
+    .subprice, .covers { font-size: 13px; color: var(--meta); margin-top: 4px; }
+    .note { font-size: 13px; color: var(--stain); margin-top: 8px; font-weight: 600; }
+    .section-label {
+      font-family: Archivo, sans-serif; font-weight: 700; font-size: 12px;
+      letter-spacing: .12em; text-transform: uppercase; color: var(--meta); margin: 18px 0 8px;
+    }
+    .colors { display: flex; flex-wrap: wrap; gap: 6px; }
+    .colors .chip { color: var(--ink); background: #fff; }
+    .specs { font-size: 14px; color: var(--meta); }
+    label { display: block; font-size: 13px; font-weight: 600; margin: 12px 0 4px; }
+    input, select {
+      width: 100%; font: inherit; color: var(--ink);
+      padding: 11px 12px; border: 1.5px solid var(--line); border-radius: 10px; background: #fff;
+    }
+    input:focus, select:focus, button:focus-visible {
+      outline: 3px solid rgba(140,90,40,.35); outline-offset: 1px; border-color: var(--stain);
+    }
+    button {
+      width: 100%; margin-top: 16px; padding: 14px;
+      font-family: Archivo, sans-serif; font-weight: 700; font-size: 16px;
+      letter-spacing: .04em; text-transform: uppercase;
+      color: #fff; background: var(--stain); border: 0; border-radius: 10px; cursor: pointer;
+    }
+    button[disabled] { opacity: .55; cursor: default; }
+    .error { color: #8C2B1F; font-size: 14px; margin-top: 10px; min-height: 1em; }
+    .fine { font-size: 12px; color: var(--meta); margin-top: 10px; }
+    .switch { text-align: center; margin-top: 14px; font-size: 13px; }
+    .switch a, .quick a { color: var(--stain); }
+    .quick { text-align: center; margin-top: 12px; font-size: 13px; }
+    .hidden { display: none; }
+    .success {
+      border: 2px solid var(--ok); border-radius: 10px; background: #F3F7F2;
+      padding: 14px 16px; margin-top: 16px; font-size: 15px; color: var(--ok); font-weight: 600;
+    }
+    .loading { text-align: center; padding: 34px 20px; color: var(--meta); }
+    .dots::after { content: "…"; animation: pulse 1.2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="masthead">
+    <img id="logo" class="hidden" alt="">
+    <div class="biz" id="bizName">Pride Floors and Construction</div>
+    <div class="sub">Showroom sample pricing</div>
+  </div>
+
+  <div class="card loading" id="viewLoading"><span class="dots">Pulling up the price</span></div>
+
+  <div class="card hidden" id="viewSignin">
+    <div class="eyebrow">One quick step</div>
+    <h1 class="collection" style="font-size:20px" id="signinTitle">Sign in to see pricing</h1>
+    <p class="fine" style="margin-top:6px" id="signinBlurb">This is how we keep track of who has which sample — you only do it once.</p>
+    <div id="fName"><label for="inName">Name</label><input id="inName" autocomplete="name"></div>
+    <div id="fPhone"><label for="inPhone">Phone</label><input id="inPhone" type="tel" autocomplete="tel" inputmode="tel"></div>
+    <div id="fEmail" class="hidden"><label for="inEmail">Email</label><input id="inEmail" type="email" autocomplete="email"></div>
+    <div id="fZip" class="hidden"><label for="inZip">Zip code</label><input id="inZip" inputmode="numeric" autocomplete="postal-code"></div>
+    <div id="fHeard" class="hidden"><label for="inHeard">How did you hear about us?</label><input id="inHeard"></div>
+    <button id="btnSignin">See the price</button>
+    <div class="error" id="signinError"></div>
+    <div class="quick" id="quickWrap"><a href="#" id="quickToggle">Signed in before? Just enter your phone</a></div>
+  </div>
+
+  <div class="card hidden" id="viewProduct">
+    <div class="eyebrow" id="pBrand"></div>
+    <h1 class="collection" id="pCollection"></h1>
+    <span class="chip" id="pCategory"></span>
+    <div class="tag">
+      <div class="starting hidden" id="pStarting">Starting at</div>
+      <div class="price"><span id="pPrice"></span> <span class="unit" id="pUnit"></span></div>
+      <div class="subprice hidden" id="pSub"></div>
+      <div class="covers" id="pCovers"></div>
+      <div class="note hidden" id="pNote"></div>
+    </div>
+    <div id="pSpecsWrap" class="hidden">
+      <div class="section-label">Specs</div>
+      <div class="specs" id="pSpecs"></div>
+    </div>
+    <div id="pColorsWrap" class="hidden">
+      <div class="section-label">Colors in this collection</div>
+      <div class="colors" id="pColors"></div>
+    </div>
+    <div id="checkoutWrap">
+      <div class="section-label">Taking this sample home?</div>
+      <label for="selColor">Which board is in your hand?</label>
+      <select id="selColor"></select>
+      <button id="btnCheckout">Check out this sample</button>
+      <div class="error" id="checkoutError"></div>
+    </div>
+    <div class="success hidden" id="checkoutSuccess"></div>
+    <div class="switch">Signed in as <span id="whoami"></span> · <a href="#" id="switchUser">not you?</a></div>
+  </div>
+
+  <div class="card hidden" id="viewNotFound">
+    <div class="eyebrow">Hmm</div>
+    <h1 class="collection" style="font-size:20px">We couldn't match that code</h1>
+    <p class="fine">Try scanning the tag again, or ask a team member — they'll get you the price on the spot.</p>
+  </div>
+
+  <div class="card hidden" id="viewError">
+    <div class="eyebrow">Connection hiccup</div>
+    <h1 class="collection" style="font-size:20px">Couldn't reach the price list</h1>
+    <p class="fine">Check your signal and try again, or ask a team member.</p>
+    <button id="btnRetry">Try again</button>
+  </div>
+</div>
+
+<script>
+  var API = 'https://script.google.com/macros/s/AKfycbzuRkC5nlpLuIiIfhQOAzHBYZl4zusVUXeGuUbo5Tst2agPQI8Kov1wsyosO9PlJm3dUA/exec';
+  var KEY = 'pf_customer_v1';
+  var QRID = (new URLSearchParams(location.search).get('id') || '').trim();
+  var PRODUCT = null, CONFIG = null, quickMode = false;
+
+  function $(id) { return document.getElementById(id); }
+  function show(id) { $(id).classList.remove('hidden'); }
+  function hide(id) { $(id).classList.add('hidden'); }
+  function money(n) { return '$' + Number(n).toFixed(2); }
+  function getCustomer() {
+    try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; }
+  }
+
+  async function api(params) {
+    var u = API + '?' + new URLSearchParams(params).toString();
+    var ctrl = new AbortController();
+    var t = setTimeout(function () { ctrl.abort(); }, 12000);
+    try {
+      var r = await fetch(u, { signal: ctrl.signal });
+      return await r.json();
+    } finally { clearTimeout(t); }
+  }
+
+  async function init() {
+    if (!QRID) { hide('viewLoading'); show('viewNotFound'); return; }
+    try {
+      var res = await api({ api: 'product', id: QRID });
+      CONFIG = res.config || {};
+      PRODUCT = res.product;
+      applyConfig();
+      hide('viewLoading');
+      if (!PRODUCT) { show('viewNotFound'); return; }
+      var cust = getCustomer();
+      if (cust && cust.id) enterProduct(cust); else show('viewSignin');
+    } catch (e) {
+      hide('viewLoading'); show('viewError');
+    }
+  }
+
+  function applyConfig() {
+    $('bizName').textContent = CONFIG.businessName || 'Pride Floors and Construction';
+    if (CONFIG.logoUrl) {
+      $('logo').onerror = function () { hide('logo'); };
+      $('logo').src = CONFIG.logoUrl; show('logo');
+    }
+    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
+    if (wants.indexOf('email') > -1) show('fEmail');
+    if (wants.indexOf('zip') > -1) show('fZip');
+    if (wants.some(function (f) { return f.indexOf('heard') > -1; })) show('fHeard');
+  }
+
+  function setQuickMode(on) {
+    quickMode = on;
+    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
+    ['fName', 'fEmail', 'fZip', 'fHeard'].forEach(function (id) { hide(id); });
+    if (!on) {
+      show('fName');
+      if (wants.indexOf('email') > -1) show('fEmail');
+      if (wants.indexOf('zip') > -1) show('fZip');
+      if (wants.some(function (f) { return f.indexOf('heard') > -1; })) show('fHeard');
+    }
+    $('signinTitle').textContent = on ? 'Welcome back' : 'Sign in to see pricing';
+    $('signinBlurb').textContent = on ? 'Enter the phone number you signed in with.' :
+      'This is how we keep track of who has which sample — you only do it once.';
+    $('btnSignin').textContent = on ? 'Pull up my info' : 'See the price';
+    $('quickToggle').textContent = on ? 'New here? Full sign-in' : 'Signed in before? Just enter your phone';
+    $('signinError').textContent = '';
+  }
+
+  $('quickToggle').addEventListener('click', function (ev) {
+    ev.preventDefault(); setQuickMode(!quickMode);
+  });
+
+  $('btnSignin').addEventListener('click', async function () {
+    var name = $('inName').value.trim();
+    var phone = $('inPhone').value.trim();
+    var err = $('signinError'); err.textContent = '';
+    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
+
+    if (phone.replace(/\D/g, '').length < 10) { err.textContent = 'Enter a 10-digit phone number.'; return; }
+    if (!quickMode) {
+      if (!name) { err.textContent = 'Enter your name to continue.'; return; }
+      if (wants.indexOf('email') > -1 && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($('inEmail').value.trim())) {
+        err.textContent = 'Enter a valid email address.'; return;
+      }
+    }
+
+    var btn = $('btnSignin'); btn.disabled = true; btn.textContent = 'One sec…';
+    try {
+      var payload = quickMode ? { api: 'register', phone: phone, lookup: '1' } :
+        { api: 'register', name: name, phone: phone, email: $('inEmail').value.trim(),
+          zip: $('inZip').value.trim(), heard: $('inHeard').value.trim() };
+      var res = await api(payload);
+      if (res && res.customerId) {
+        var cust = { id: res.customerId, name: res.name || name };
+        try { localStorage.setItem(KEY, JSON.stringify(cust)); } catch (e) {}
+        hide('viewSignin'); enterProduct(cust);
+      } else if (res && res.notFound) {
+        setQuickMode(false);
+        err.textContent = "We couldn't find that number — quick sign-up below.";
+      } else {
+        err.textContent = (res && res.error) || 'Something went wrong — try again.';
+      }
+    } catch (e) {
+      err.textContent = 'No connection — try again.';
+    }
+    btn.disabled = false;
+    btn.textContent = quickMode ? 'Pull up my info' : 'See the price';
+  });
+
+  function enterProduct(cust) {
+    $('pBrand').textContent = PRODUCT.brand;
+    $('pCollection').textContent = PRODUCT.collection;
+    if (PRODUCT.category) $('pCategory').textContent = PRODUCT.category; else hide('pCategory');
+
+    var mode = (CONFIG.priceToShow || 'Discounted').toLowerCase();
+    var main = mode === 'bulk' ? PRODUCT.bulk : PRODUCT.disc;
+    $('pPrice').textContent = main != null ? money(main) : 'Ask us';
+    $('pUnit').textContent = PRODUCT.unit ? PRODUCT.unit.replace('per', '/') : '';
+    if ((CONFIG.showPricesAs || '').toLowerCase().indexOf('start') > -1) show('pStarting');
+    if (mode === 'both' && PRODUCT.bulk != null) {
+      $('pSub').textContent = 'Bulk pricing: ' + money(PRODUCT.bulk) + ' ' +
+        (PRODUCT.unit ? PRODUCT.unit.replace('per', '/') : '') + ' — ask us about larger jobs';
+      show('pSub');
+    }
+    if (PRODUCT.covers) $('pCovers').textContent = PRODUCT.covers;
+    if (CONFIG.priceNote) { $('pNote').textContent = CONFIG.priceNote; show('pNote'); }
+    if (PRODUCT.specs) { $('pSpecs').textContent = PRODUCT.specs; show('pSpecsWrap'); }
+
+    var colors = PRODUCT.colors && PRODUCT.colors.length ? PRODUCT.colors : [];
+    if (colors.length) {
+      var wrap = $('pColors'); wrap.innerHTML = '';
+      colors.forEach(function (c) {
+        var s = document.createElement('span'); s.className = 'chip'; s.textContent = c;
+        wrap.appendChild(s);
+      });
+      show('pColorsWrap');
+    }
+    var sel = $('selColor'); sel.innerHTML = '';
+    (colors.length ? colors : [PRODUCT.collection]).forEach(function (c) {
+      var o = document.createElement('option'); o.textContent = c; sel.appendChild(o);
+    });
+
+    $('whoami').textContent = cust.name || 'you';
+    show('viewProduct');
+    api({ api: 'scan', cust: cust.id, id: QRID }).catch(function () {});
+  }
+
+  $('btnCheckout').addEventListener('click', async function () {
+    var cust = getCustomer(); if (!cust) return;
+    var btn = $('btnCheckout'); btn.disabled = true; btn.textContent = 'Saving…';
+    $('checkoutError').textContent = '';
+    try {
+      var res = await api({ api: 'checkout', cust: cust.id, id: QRID, color: $('selColor').value });
+      if (res && res.ok) {
+        hide('checkoutWrap');
+        $('checkoutSuccess').textContent = "You're all set — enjoy it at home, and bring it back within " +
+          res.loanDays + ' days.';
+        show('checkoutSuccess');
+        return;
+      }
+      $('checkoutError').textContent = (res && res.error) || 'That did not save — try again.';
+    } catch (e) {
+      $('checkoutError').textContent = 'No connection — try again.';
+    }
+    btn.disabled = false; btn.textContent = 'Check out this sample';
+  });
+
+  $('switchUser').addEventListener('click', function (ev) {
+    ev.preventDefault();
+    try { localStorage.removeItem(KEY); } catch (e) {}
+    hide('viewProduct'); setQuickMode(false); show('viewSignin');
+  });
+
+  $('btnRetry').addEventListener('click', function () { location.reload(); });
+
+  init();
+</script>
+</body>
+</html>
