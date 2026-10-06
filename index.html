@@ -99,6 +99,7 @@
     @keyframes pulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
   </style>
 </head>
+</head>
 <body>
 <div class="wrap">
   <div class="masthead">
@@ -107,20 +108,20 @@
     <div class="sub">Showroom sample pricing</div>
   </div>
 
-  <div class="card loading" id="viewLoading"><span class="dots">Pulling up the price</span></div>
+  <div class="card loading hidden" id="viewLoading"><span class="dots">Pulling up the price</span></div>
 
   <div class="card hidden" id="viewSignin">
     <div class="eyebrow">One quick step</div>
     <h1 class="collection" style="font-size:20px" id="signinTitle">Sign in to see pricing</h1>
-    <p class="fine" style="margin-top:6px" id="signinBlurb">This is how we keep track of who has which sample — you only do it once.</p>
-    <div id="fName"><label for="inName">Name</label><input id="inName" autocomplete="name"></div>
-    <div id="fPhone"><label for="inPhone">Phone</label><input id="inPhone" type="tel" autocomplete="tel" inputmode="tel"></div>
+    <p class="fine" style="margin-top:6px" id="signinBlurb">Enter your phone number — if you've been here before, that's all we need.</p>
+    <div id="fPhone"><label for="inPhone">Phone</label><input id="inPhone" type="tel" autocomplete="tel" inputmode="tel" enterkeyhint="go"></div>
+    <div id="fName" class="hidden"><label for="inName">Name</label><input id="inName" autocomplete="name"></div>
     <div id="fEmail" class="hidden"><label for="inEmail">Email</label><input id="inEmail" type="email" autocomplete="email"></div>
     <div id="fZip" class="hidden"><label for="inZip">Zip code</label><input id="inZip" inputmode="numeric" autocomplete="postal-code"></div>
     <div id="fHeard" class="hidden"><label for="inHeard">How did you hear about us?</label><input id="inHeard"></div>
-    <button id="btnSignin">See the price</button>
+    <button id="btnSignin">Continue</button>
     <div class="error" id="signinError"></div>
-    <div class="quick" id="quickWrap"><a href="#" id="quickToggle">Signed in before? Just enter your phone</a></div>
+    <div class="quick" id="quickWrap"><a href="#" id="quickToggle">New here? Add your details</a></div>
   </div>
 
   <div class="card hidden" id="viewProduct">
@@ -150,6 +151,7 @@
       <div class="error" id="checkoutError"></div>
     </div>
     <div class="success hidden" id="checkoutSuccess"></div>
+    <div class="fine hidden" id="pOffline">Weak signal — your info is saved on this phone and will sync automatically.</div>
     <div class="switch">Signed in as <span id="whoami"></span> · <a href="#" id="switchUser">not you?</a></div>
   </div>
 
@@ -168,181 +170,333 @@
 </div>
 
 <script>
+  // ---------------------------------------------------------------- config
   var API = 'https://script.google.com/macros/s/AKfycbzuRkC5nlpLuIiIfhQOAzHBYZl4zusVUXeGuUbo5Tst2agPQI8Kov1wsyosO9PlJm3dUA/exec';
-  var KEY = 'pf_customer_v1';
-  var QRID = (new URLSearchParams(location.search).get('id') || '').trim();
-  var PRODUCT = null, CONFIG = null, quickMode = false;
+  var KEY_CUST = 'pf_customer_v2', KEY_CUST_OLD = 'pf_customer_v1';
+  var KEY_CAT = 'pf_catalog_v1', KEY_Q = 'pf_queue_v1';
+  var CATALOG_MAX_AGE = 10 * 60 * 1000;           // refresh the on-phone price list after 10 min
+  var DEFAULT_CONFIG = { businessName: 'Pride Floors and Construction', priceToShow: 'Discounted',
+    showPricesAs: 'Exact', signinFields: ['Name', 'Phone', 'Email'], loanDays: 7, logoUrl: '', priceNote: '' };
 
+  var QRID = (new URLSearchParams(location.search).get('id') || '').trim();
+  var PRODUCT = null, CONFIG = null, stage = 'phone', productPromise = null, flushing = false;
+
+  // ---------------------------------------------------------------- helpers
   function $(id) { return document.getElementById(id); }
   function show(id) { $(id).classList.remove('hidden'); }
   function hide(id) { $(id).classList.add('hidden'); }
   function money(n) { return '$' + Number(n).toFixed(2); }
-  function getCustomer() {
-    try { return JSON.parse(localStorage.getItem(KEY)); } catch (e) { return null; }
-  }
+  function lsGet(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} }
+  function lsDel(k) { try { localStorage.removeItem(k); } catch (e) {} }
+  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+  function online() { return navigator.onLine !== false; }
 
-  async function api(params) {
+  function getCustomer() {
+    var c = lsGet(KEY_CUST);
+    if (!c) { var old = lsGet(KEY_CUST_OLD); if (old && old.id) { c = { id: old.id, name: old.name || '' }; lsSet(KEY_CUST, c); } }
+    return c && (c.id || c.pending) ? c : null;
+  }
+  function setCustomer(c) { lsSet(KEY_CUST, c); }
+
+  /** One API call with a timeout. Resolves with parsed JSON; rejects on network/timeout/bad JSON. */
+  function callOnce(params, timeoutMs) {
     var u = API + '?' + new URLSearchParams(params).toString();
     var ctrl = new AbortController();
-    var t = setTimeout(function () { ctrl.abort(); }, 12000);
-    try {
-      var r = await fetch(u, { signal: ctrl.signal });
-      return await r.json();
-    } finally { clearTimeout(t); }
+    var t = setTimeout(function () { ctrl.abort(); }, timeoutMs);
+    return fetch(u, { signal: ctrl.signal, cache: 'no-store' })
+      .then(function (r) { return r.json(); })
+      .finally(function () { clearTimeout(t); });
   }
-
-  async function init() {
-    if (!QRID) { hide('viewLoading'); show('viewNotFound'); return; }
-    try {
-      var res = await api({ api: 'product', id: QRID });
-      CONFIG = res.config || {};
-      PRODUCT = res.product;
-      applyConfig();
-      hide('viewLoading');
-      if (!PRODUCT) { show('viewNotFound'); return; }
-      var cust = getCustomer();
-      if (cust && cust.id) enterProduct(cust); else show('viewSignin');
-    } catch (e) {
-      hide('viewLoading'); show('viewError');
+  /** Retrying API call: 3 attempts with growing timeouts. Apps Script can be slow to wake up. */
+  async function api(params, opts) {
+    opts = opts || {};
+    var timeouts = opts.timeouts || [8000, 12000, 16000];
+    var lastErr;
+    for (var i = 0; i < timeouts.length; i++) {
+      try { return await callOnce(params, timeouts[i]); }
+      catch (e) { lastErr = e; if (i < timeouts.length - 1) await sleep(500 + 500 * i); }
     }
+    throw lastErr || new Error('network');
   }
 
+  // ---------------------------------------------------------------- catalog on the phone
+  function getCatalog() { return lsGet(KEY_CAT); }
+  function cachedProduct(id) { var c = getCatalog(); return c && c.byId ? (c.byId[id] || null) : null; }
+  function saveCatalog(res) {
+    if (!res || !Array.isArray(res.products)) return false;
+    var byId = {};
+    res.products.forEach(function (p) { if (p && p.qrId) byId[p.qrId] = p; });
+    lsSet(KEY_CAT, { at: Date.now(), updated: res.updated || '', config: res.config || CONFIG, byId: byId });
+    if (res.config) { CONFIG = res.config; applyConfig(); }
+    return true;
+  }
+  var catalogInFlight = false;
+  async function refreshCatalog(force) {
+    var c = getCatalog();
+    if (!force && c && c.at && Date.now() - c.at < CATALOG_MAX_AGE) return;
+    if (catalogInFlight || !online()) return;
+    catalogInFlight = true;
+    try {
+      var res = await api({ api: 'catalog' }, { timeouts: [25000] });
+      saveCatalog(res);                 // an old script answers {error:'unknown api action'} — ignored
+    } catch (e) { /* background only */ }
+    finally { catalogInFlight = false; }
+  }
+
+  /** Resolve the product for this QR: instant from the phone's cache, else from the server (with retries). */
+  function loadProduct() {
+    var cached = cachedProduct(QRID);
+    if (cached) {
+      PRODUCT = cached;
+      setTimeout(function () { refreshCatalog(false); }, 1500);
+      return Promise.resolve(cached);
+    }
+    return api({ api: 'product', id: QRID }).then(function (res) {
+      if (res && res.config) { CONFIG = res.config; applyConfig(); }
+      PRODUCT = (res && res.product) || null;
+      setTimeout(function () { refreshCatalog(true); }, 1500);   // warm the cache for the next scan
+      return PRODUCT;
+    });
+  }
+
+  // ---------------------------------------------------------------- config / UI
+  function wantsField(f) {
+    return (CONFIG.signinFields || []).some(function (x) { return String(x).toLowerCase().indexOf(f) > -1; });
+  }
   function applyConfig() {
-    $('bizName').textContent = CONFIG.businessName || 'Pride Floors and Construction';
-    if (CONFIG.logoUrl) {
-      $('logo').onerror = function () { hide('logo'); };
-      $('logo').src = CONFIG.logoUrl; show('logo');
-    }
-    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
-    if (wants.indexOf('email') > -1) show('fEmail');
-    if (wants.indexOf('zip') > -1) show('fZip');
-    if (wants.some(function (f) { return f.indexOf('heard') > -1; })) show('fHeard');
+    $('bizName').textContent = CONFIG.businessName || DEFAULT_CONFIG.businessName;
+    if (CONFIG.logoUrl) { $('logo').onerror = function () { hide('logo'); }; $('logo').src = CONFIG.logoUrl; show('logo'); }
+    if (!$('viewSignin').classList.contains('hidden')) setStage(stage, null);
   }
 
-  function setQuickMode(on) {
-    quickMode = on;
-    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
-    ['fName', 'fEmail', 'fZip', 'fHeard'].forEach(function (id) { hide(id); });
-    if (!on) {
+  function setStage(s, msg) {
+    stage = s;
+    ['fName', 'fEmail', 'fZip', 'fHeard'].forEach(hide);
+    if (s === 'details') {
       show('fName');
-      if (wants.indexOf('email') > -1) show('fEmail');
-      if (wants.indexOf('zip') > -1) show('fZip');
-      if (wants.some(function (f) { return f.indexOf('heard') > -1; })) show('fHeard');
+      if (wantsField('email')) show('fEmail');
+      if (wantsField('zip')) show('fZip');
+      if (wantsField('heard')) show('fHeard');
+      $('signinTitle').textContent = 'Almost there';
+      $('signinBlurb').textContent = msg || "Looks like you're new — a couple more details and you're set. You only do this once.";
+      $('btnSignin').textContent = 'See the price';
+      $('quickToggle').textContent = 'Signed in before? Just use your phone';
+    } else {
+      $('signinTitle').textContent = 'Sign in to see pricing';
+      $('signinBlurb').textContent = msg || "Enter your phone number — if you've been here before, that's all we need.";
+      $('btnSignin').textContent = 'Continue';
+      $('quickToggle').textContent = 'New here? Add your details';
     }
-    $('signinTitle').textContent = on ? 'Welcome back' : 'Sign in to see pricing';
-    $('signinBlurb').textContent = on ? 'Enter the phone number you signed in with.' :
-      'This is how we keep track of who has which sample — you only do it once.';
-    $('btnSignin').textContent = on ? 'Pull up my info' : 'See the price';
-    $('quickToggle').textContent = on ? 'New here? Full sign-in' : 'Signed in before? Just enter your phone';
     $('signinError').textContent = '';
   }
 
   $('quickToggle').addEventListener('click', function (ev) {
-    ev.preventDefault(); setQuickMode(!quickMode);
+    ev.preventDefault(); setStage(stage === 'phone' ? 'details' : 'phone', null);
   });
+  $('inPhone').addEventListener('keydown', function (ev) { if (ev.key === 'Enter') $('btnSignin').click(); });
 
+  // ---------------------------------------------------------------- sign-in (phone first)
   $('btnSignin').addEventListener('click', async function () {
-    var name = $('inName').value.trim();
-    var phone = $('inPhone').value.trim();
     var err = $('signinError'); err.textContent = '';
-    var wants = (CONFIG.signinFields || []).map(function (f) { return f.toLowerCase(); });
-
+    var phone = $('inPhone').value.trim();
+    var name = $('inName').value.trim();
     if (phone.replace(/\D/g, '').length < 10) { err.textContent = 'Enter a 10-digit phone number.'; return; }
-    if (!quickMode) {
+    if (stage === 'details') {
       if (!name) { err.textContent = 'Enter your name to continue.'; return; }
-      if (wants.indexOf('email') > -1 && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($('inEmail').value.trim())) {
+      if (wantsField('email') && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test($('inEmail').value.trim())) {
         err.textContent = 'Enter a valid email address.'; return;
       }
     }
-
     var btn = $('btnSignin'); btn.disabled = true; btn.textContent = 'One sec…';
-    try {
-      var payload = quickMode ? { api: 'register', phone: phone, lookup: '1' } :
-        { api: 'register', name: name, phone: phone, email: $('inEmail').value.trim(),
-          zip: $('inZip').value.trim(), heard: $('inHeard').value.trim() };
-      var res = await api(payload);
-      if (res && res.customerId) {
-        var cust = { id: res.customerId, name: res.name || name };
-        try { localStorage.setItem(KEY, JSON.stringify(cust)); } catch (e) {}
-        hide('viewSignin'); enterProduct(cust);
-      } else if (res && res.notFound) {
-        setQuickMode(false);
-        err.textContent = "We couldn't find that number — quick sign-up below.";
-      } else {
-        err.textContent = (res && res.error) || 'Something went wrong — try again.';
+
+    if (stage === 'phone') {
+      // Known number? One field and done.
+      try {
+        var r = await api({ api: 'register', phone: phone, lookup: '1' }, { timeouts: [8000, 12000] });
+        if (r && r.customerId) { finishSignin({ id: r.customerId, name: r.name || '', phone: phone }); return; }
+        if (r && r.notFound) { setStage('details', null); }
+        else { setStage('details', "We couldn't check that number right now — add your name to continue."); }
+      } catch (e) {
+        setStage('details', "Weak signal — we couldn't check that number. Add your name and we'll finish signing you in automatically.");
       }
-    } catch (e) {
-      err.textContent = 'No connection — try again.';
+      btn.disabled = false; btn.textContent = 'See the price';
+      $('inName').focus();
+      return;
     }
-    btn.disabled = false;
-    btn.textContent = quickMode ? 'Pull up my info' : 'See the price';
+
+    // Full sign-in. If the server is unreachable, keep going: save locally and sync later.
+    var details = { name: name, phone: phone, email: $('inEmail').value.trim(),
+      zip: $('inZip').value.trim(), heard: $('inHeard').value.trim() };
+    try {
+      var res = await api(Object.assign({ api: 'register' }, details));
+      if (res && res.customerId) { finishSignin({ id: res.customerId, name: res.name || name, phone: phone }); return; }
+      err.textContent = (res && res.error) || 'Something went wrong — try again.';
+      btn.disabled = false; btn.textContent = 'See the price';
+    } catch (e) {
+      var pending = { pending: true, name: name, phone: phone, details: details };
+      setCustomer(pending);
+      enqueue({ type: 'register', details: details });
+      finishSignin(pending);
+    }
   });
+
+  async function finishSignin(cust) {
+    setCustomer(cust);
+    hide('viewSignin');
+    await showProduct(cust);
+  }
+
+  // ---------------------------------------------------------------- product view
+  async function showProduct(cust) {
+    if (!PRODUCT) {
+      show('viewLoading');
+      try { await productPromise; } catch (e) { hide('viewLoading'); show('viewError'); return; }
+      hide('viewLoading');
+    }
+    if (!PRODUCT) { show('viewNotFound'); return; }
+    enterProduct(cust);
+  }
 
   function enterProduct(cust) {
     $('pBrand').textContent = PRODUCT.brand;
     $('pCollection').textContent = PRODUCT.collection;
-    if (PRODUCT.category) $('pCategory').textContent = PRODUCT.category; else hide('pCategory');
+    if (PRODUCT.category) { $('pCategory').textContent = PRODUCT.category; show('pCategory'); } else hide('pCategory');
 
     var mode = (CONFIG.priceToShow || 'Discounted').toLowerCase();
     var main = mode === 'bulk' ? PRODUCT.bulk : PRODUCT.disc;
     $('pPrice').textContent = main != null ? money(main) : 'Ask us';
     $('pUnit').textContent = PRODUCT.unit ? PRODUCT.unit.replace('per', '/') : '';
-    if ((CONFIG.showPricesAs || '').toLowerCase().indexOf('start') > -1) show('pStarting');
+    if ((CONFIG.showPricesAs || '').toLowerCase().indexOf('start') > -1) show('pStarting'); else hide('pStarting');
     if (mode === 'both' && PRODUCT.bulk != null) {
       $('pSub').textContent = 'Bulk pricing: ' + money(PRODUCT.bulk) + ' ' +
         (PRODUCT.unit ? PRODUCT.unit.replace('per', '/') : '') + ' — ask us about larger jobs';
       show('pSub');
-    }
-    if (PRODUCT.covers) $('pCovers').textContent = PRODUCT.covers;
-    if (CONFIG.priceNote) { $('pNote').textContent = CONFIG.priceNote; show('pNote'); }
-    if (PRODUCT.specs) { $('pSpecs').textContent = PRODUCT.specs; show('pSpecsWrap'); }
+    } else hide('pSub');
+    $('pCovers').textContent = PRODUCT.covers || '';
+    if (CONFIG.priceNote) { $('pNote').textContent = CONFIG.priceNote; show('pNote'); } else hide('pNote');
+    if (PRODUCT.specs) { $('pSpecs').textContent = PRODUCT.specs; show('pSpecsWrap'); } else hide('pSpecsWrap');
 
     var colors = PRODUCT.colors && PRODUCT.colors.length ? PRODUCT.colors : [];
+    var wrap = $('pColors'); wrap.innerHTML = '';
     if (colors.length) {
-      var wrap = $('pColors'); wrap.innerHTML = '';
       colors.forEach(function (c) {
-        var s = document.createElement('span'); s.className = 'chip'; s.textContent = c;
-        wrap.appendChild(s);
+        var s = document.createElement('span'); s.className = 'chip'; s.textContent = c; wrap.appendChild(s);
       });
       show('pColorsWrap');
-    }
+    } else hide('pColorsWrap');
     var sel = $('selColor'); sel.innerHTML = '';
     (colors.length ? colors : [PRODUCT.collection]).forEach(function (c) {
       var o = document.createElement('option'); o.textContent = c; sel.appendChild(o);
     });
 
     $('whoami').textContent = cust.name || 'you';
+    if (cust.pending) show('pOffline'); else hide('pOffline');
     show('viewProduct');
-    api({ api: 'scan', cust: cust.id, id: QRID }).catch(function () {});
+
+    // Bookkeeping never blocks the price: log now, or queue it with the real timestamp.
+    var ts = Date.now();
+    if (cust.pending) { enqueue({ type: 'scan', cust: 'pending', id: QRID, ts: ts }); flushQueue(); }
+    else {
+      api({ api: 'scan', cust: cust.id, id: QRID, ts: ts }, { timeouts: [10000, 15000] })
+        .then(function () { flushQueue(); })
+        .catch(function () { enqueue({ type: 'scan', cust: cust.id, id: QRID, ts: ts }); });
+    }
   }
 
+  // ---------------------------------------------------------------- checkout
   $('btnCheckout').addEventListener('click', async function () {
     var cust = getCustomer(); if (!cust) return;
     var btn = $('btnCheckout'); btn.disabled = true; btn.textContent = 'Saving…';
     $('checkoutError').textContent = '';
-    try {
-      var res = await api({ api: 'checkout', cust: cust.id, id: QRID, color: $('selColor').value });
-      if (res && res.ok) {
-        hide('checkoutWrap');
-        $('checkoutSuccess').textContent = "You're all set — enjoy it at home, and bring it back within " +
-          res.loanDays + ' days.';
-        show('checkoutSuccess');
-        return;
-      }
-      $('checkoutError').textContent = (res && res.error) || 'That did not save — try again.';
-    } catch (e) {
-      $('checkoutError').textContent = 'No connection — try again.';
+    var color = $('selColor').value;
+    var loanDays = (CONFIG && CONFIG.loanDays) || DEFAULT_CONFIG.loanDays;
+    function done(msg) { hide('checkoutWrap'); $('checkoutSuccess').textContent = msg; show('checkoutSuccess'); }
+
+    if (cust.pending) {
+      enqueue({ type: 'checkout', cust: 'pending', id: QRID, color: color });
+      done("You're all set — bring it back within " + loanDays + " days. (Weak signal: we'll finish recording this automatically — please also tell a team member.)");
+      flushQueue(); return;
     }
-    btn.disabled = false; btn.textContent = 'Check out this sample';
+    try {
+      var res = await api({ api: 'checkout', cust: cust.id, id: QRID, color: color });
+      if (res && res.ok) { done("You're all set — enjoy it at home, and bring it back within " + (res.loanDays || loanDays) + ' days.'); return; }
+      $('checkoutError').textContent = (res && res.error) || 'That did not save — try again.';
+      btn.disabled = false; btn.textContent = 'Check out this sample';
+    } catch (e) {
+      enqueue({ type: 'checkout', cust: cust.id, id: QRID, color: color });
+      done("You're all set — bring it back within " + loanDays + " days. (Weak signal: we'll finish recording this automatically — please also tell a team member.)");
+    }
   });
 
+  // ---------------------------------------------------------------- offline queue
+  function getQueue() { return lsGet(KEY_Q) || []; }
+  function enqueue(item) { var q = getQueue(); q.push(item); lsSet(KEY_Q, q); }
+
+  /** Replays queued sign-ins / scans / checkouts in order. Stops at the first network failure. */
+  async function flushQueue() {
+    if (flushing || !online()) return;
+    var q = getQueue(); if (!q.length) return;
+    flushing = true;
+    try {
+      while (q.length) {
+        var it = q[0], res;
+        if (it.type === 'register') {
+          res = await api(Object.assign({ api: 'register' }, it.details), { timeouts: [12000] });
+          if (res && res.customerId) {
+            var cur = getCustomer();
+            if (cur && cur.pending) { setCustomer({ id: res.customerId, name: res.name || cur.name || '', phone: cur.phone || '' }); hide('pOffline'); }
+            q.forEach(function (x) { if (x.cust === 'pending') x.cust = res.customerId; });
+          }
+          // a server-side {error} means the data was rejected: drop it rather than retry forever
+        } else if (it.type === 'scan') {
+          if (it.cust === 'pending') break;      // needs its register first
+          await api({ api: 'scan', cust: it.cust, id: it.id, ts: it.ts }, { timeouts: [12000] });
+        } else if (it.type === 'checkout') {
+          if (it.cust === 'pending') break;
+          await api({ api: 'checkout', cust: it.cust, id: it.id, color: it.color }, { timeouts: [12000] });
+        }
+        q.shift(); lsSet(KEY_Q, q);
+      }
+    } catch (e) { /* network — keep the rest for next time */ }
+    finally { flushing = false; }
+  }
+
+  // ---------------------------------------------------------------- boot
   $('switchUser').addEventListener('click', function (ev) {
     ev.preventDefault();
-    try { localStorage.removeItem(KEY); } catch (e) {}
-    hide('viewProduct'); setQuickMode(false); show('viewSignin');
+    lsDel(KEY_CUST); lsDel(KEY_CUST_OLD);
+    hide('viewProduct'); hide('pOffline'); setStage('phone', null); show('viewSignin'); $('inPhone').focus();
   });
 
-  $('btnRetry').addEventListener('click', function () { location.reload(); });
+  $('btnRetry').addEventListener('click', async function () {
+    hide('viewError'); PRODUCT = null;
+    productPromise = loadProduct().catch(function (e) { throw e; });
+    var cust = getCustomer();
+    if (cust) await showProduct(cust); else { setStage('phone', null); show('viewSignin'); }
+  });
+
+  window.addEventListener('online', function () { flushQueue(); refreshCatalog(false); });
+
+  async function init() {
+    var cat = getCatalog();
+    CONFIG = (cat && cat.config) || DEFAULT_CONFIG;
+    applyConfig();
+    if (!QRID) { show('viewNotFound'); return; }
+
+    productPromise = loadProduct();
+    productPromise.catch(function () {});              // handled where awaited
+
+    var cust = getCustomer();
+    if (cust) { await showProduct(cust); }
+    else { setStage('phone', null); show('viewSignin'); $('inPhone').focus(); }
+
+    // A pending sign-in from last time with no register queued (shouldn't happen) — re-queue it.
+    if (cust && cust.pending && !getQueue().some(function (x) { return x.type === 'register'; }) && cust.details) {
+      getQueue(); enqueue({ type: 'register', details: cust.details });
+    }
+    setTimeout(flushQueue, 2500);
+  }
 
   init();
 </script>
